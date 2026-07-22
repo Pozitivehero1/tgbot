@@ -31,7 +31,6 @@ def configure_logging(log_level: str = "INFO", log_format: str = "json") -> None
 
     shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
-        structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         _add_severity,
         structlog.stdlib.PositionalArgumentsFormatter(),
