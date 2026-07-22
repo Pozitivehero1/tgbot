@@ -1,49 +1,51 @@
-# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+pip-wheel-metadata/
 
-# compiled output
-dist
-tmp
-out-tsc
-*.tsbuildinfo
-.expo
-.expo-shared
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
 
-# dependencies
-node_modules
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+*.secret
 
-# IDEs and editors
-/.idea
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
+# Data (local only — CI uses Actions Cache)
+data/
+!data/.gitkeep
 
-# IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+# Images
+*.jpg
+*.jpeg
+*.png
+*.gif
+!football_bot/assets/**
 
-# misc
-/.sass-cache
-/connect.lock
-/coverage
-/libpeerconnection.log
-npm-debug.log
-yarn-error.log
-testem.log
-/typings
+# Logs
+*.log
+logs/
 
-# System Files
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 .DS_Store
 Thumbs.db
 
-.cursor/rules/nx-rules.mdc
-.github/instructions/nx.instructions.md
-
-# Replit
-.cache/
-.local/
+# Node.js (legacy workspace files — not used by the Python bot)
+node_modules/
+*.lock

@@ -1,45 +1,93 @@
-# [Project name]
+# Football Bot — Autonomous AI Football Telegram Channel
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Fully autonomous AI-powered football Telegram channel. Runs via GitHub Actions on schedule triggered by cron-job.org. Zero manual intervention after initial setup.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+```bash
+# Local run (set .env first)
+python -m football_bot.main
+
+# Run specific pipeline
+RUN_MODE=news python -m football_bot.main
+RUN_MODE=standings python -m football_bot.main
+RUN_MODE=facts python -m football_bot.main
+RUN_MODE=digest_daily python -m football_bot.main
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+## Required environment variables
+
+| Variable | Description |
+|---|---|
+| `BOT_TOKEN` | Telegram Bot API token from @BotFather |
+| `CHANNEL_ID` | Telegram channel ID (`@channel` or `-100...`) |
+| `MISTRAL_API_KEY` | Mistral AI API key |
+| `MISTRAL_MODEL` | Model name, e.g. `mistral-large-latest` |
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Python 3.12 + asyncio
+- aiogram 3.x (Telegram Bot API)
+- Mistral AI (exclusive LLM provider — no OpenAI/Claude/Gemini)
+- SQLAlchemy 2.0 + aiosqlite (SQLite)
+- httpx + selectolax + BeautifulSoup4 + feedparser (parsers)
+- Pillow (image card generation)
+- structlog (structured JSON logging)
+- Pydantic + pydantic-settings (config/models)
+- tenacity (retry logic)
+- GitHub Actions (execution environment)
+- cron-job.org (external cron trigger via workflow_dispatch)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+```
+football_bot/
+├── config/          # Settings (Pydantic) + constants (25+ news sources, leagues)
+├── core/models/     # Domain models: NewsItem, Match, Publication, Standing
+├── core/interfaces/ # Abstract Repository + Service contracts (Clean Architecture)
+├── storage/         # SQLAlchemy schema + async DB manager
+├── repositories/    # Concrete implementations (news, match, publication)
+├── services/        # All business logic (Mistral, aggregator, editor, etc.)
+├── parsers/         # RSS (25+ feeds), HTML (selectolax+BS4), Transfer parser
+├── telegram/        # Publisher (aiogram 3.x) + HTML formatter
+├── utils/           # logger, metrics, health checker
+└── runners/         # GitHub Actions entry point + DI container
+.github/workflows/   # football_bot.yml — workflow_dispatch triggered
+SETUP.md             # Full setup guide with cron-job.org instructions
+.env.example         # All configurable env vars with defaults
+```
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **Clean Architecture**: core models/interfaces know nothing about infrastructure
+- **Repository Pattern**: all DB access goes through abstract interfaces
+- **Service Layer**: each service has a single responsibility
+- **Dependency Injection**: Container class in runner wires everything
+- **GitHub Actions Cache**: SQLite DB persisted between runs (dedup + self-learning state)
+- **No schedule in workflow**: uses `workflow_dispatch` triggered by external cron-job.org
+- **Mistral-only LLM**: MistralService with retry, rate limiting, dual-model failover, caching
 
-## Product
+## Run modes
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+| Mode | Description |
+|---|---|
+| `news` | Collect RSS → fact-check → write → publish breaking news |
+| `live` | Poll live matches → publish goal/card/sub events |
+| `digest_daily` | Daily news summary |
+| `digest_weekly` | Weekly roundup |
+| `digest_monthly` | Monthly review |
+| `facts` | Interesting fact or historical "on this day" post |
+| `standings` | League tables with AI commentary |
+| `analytics` | Self-learning analytics cycle |
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Python 3.12, no type stubs ignored, full typing throughout
+- No TODO, no mock, no pass, no stubs
+- Mistral AI exclusively — no OpenAI, no Claude, no Gemini
+- No Docker, no VPS, no persistent server — GitHub Actions only
+- External cron via cron-job.org → workflow_dispatch
+- All files production-ready and complete
