@@ -57,17 +57,23 @@ class RSSParser(BaseParser):
             return NewsCategory.STATISTICS
         return NewsCategory.GENERAL
 
-    async def fetch(self, url: str) -> list[NewsItem]:
-        """Fetch and parse a single RSS feed URL."""
-       raw = await self._fetch_bytes(url)
-if raw is None:
-    return []
+   async def fetch(self, url: str) -> list[NewsItem]:
+    """Fetch and parse a single RSS feed URL."""
 
-try:
-    feed = feedparser.parse(raw)
-except Exception as exc:
-    logger.warning("rss_parse_error", url=url, error=str(exc))
-    return []
+    raw = await self._fetch_bytes(url)
+    if raw is None:
+        return []
+
+    source_meta = next(
+        (s for s in NEWS_SOURCES if s["url"] == url),
+        {"name": url, "reliability": 0.75, "language": "en"},
+    )
+
+    try:
+        feed = feedparser.parse(raw)
+    except Exception as exc:
+        logger.warning("rss_parse_error", url=url, error=str(exc))
+        return []
 
         source_meta = next(
             (s for s in NEWS_SOURCES if s["url"] == url),
