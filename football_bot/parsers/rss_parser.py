@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -60,9 +59,15 @@ class RSSParser(BaseParser):
 
     async def fetch(self, url: str) -> list[NewsItem]:
         """Fetch and parse a single RSS feed URL."""
-        raw_text = await self._fetch_raw(url)
-        if not raw_text:
-            return []
+       raw = await self._fetch_bytes(url)
+if raw is None:
+    return []
+
+try:
+    feed = feedparser.parse(raw)
+except Exception as exc:
+    logger.warning("rss_parse_error", url=url, error=str(exc))
+    return []
 
         source_meta = next(
             (s for s in NEWS_SOURCES if s["url"] == url),
