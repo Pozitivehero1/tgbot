@@ -32,6 +32,7 @@ from football_bot.services.fact_checker import FactChecker
 from football_bot.services.facts_generator import FactsGenerator
 from football_bot.services.history_generator import HistoryGenerator
 from football_bot.services.image_generator import ImageGenerator
+from football_bot.services.image_search import ImageSearchService
 from football_bot.services.live_center import LiveCenter
 from football_bot.services.match_center import MatchCenter
 from football_bot.services.mistral_service import MistralService
@@ -72,7 +73,8 @@ class Container:
         self.duplicate_detector: DuplicateDetector | None = None
         self.fact_checker: FactChecker | None = None
         self.ai_editor: AIEditor | None = None
-        self.image_generator = ImageGenerator()
+        self.image_search = ImageSearchService()  # <-- НОВОЕ
+        self.image_generator = ImageGenerator(self.image_search)  # <-- ПЕРЕДАЁМ
         self.publisher = TelegramPublisher()
         self.match_center: MatchCenter | None = None
         self.live_center: LiveCenter | None = None
@@ -117,11 +119,12 @@ class Container:
         await self.transfer_parser.close()
         if self.match_center:
             await self.match_center.close()
+        await self.image_search.close()  # <-- НОВОЕ
         await self.db_manager.close()
         logger.info("container_shutdown")
 
 
-# ── Pipeline implementations ───────────────────────────────────────────────────
+# ── Pipeline implementations (без изменений) ───────────────────────────────────
 
 async def pipeline_news(c: Container) -> list[Publication]:
     """Collect → deduplicate → fact-check → write → image → queue."""
@@ -151,7 +154,8 @@ async def pipeline_news(c: Container) -> list[Publication]:
         else:
             pub = await c.ai_editor.write_breaking_news(item)
 
-        image_path = c.image_generator.generate_for_publication(pub, source_item=item)
+        # Генерация изображения (теперь асинхронно)
+        image_path = await c.image_generator.generate_for_publication(pub, source_item=item)
         if image_path:
             pub.image_path = image_path
 
@@ -193,6 +197,10 @@ async def pipeline_digest_daily(c: Container) -> list[Publication]:
     matches = await c.match_repo.get_recent_finished(hours=24)
 
     pub = await c.ai_editor.write_daily_digest(items, matches)
+    # Генерация изображения для дайджеста (опционально)
+    image_path = await c.image_generator.generate_for_publication(pub)
+    if image_path:
+        pub.image_path = image_path
     await c.pub_repo.save(pub)
     return [pub]
 
@@ -205,6 +213,9 @@ async def pipeline_digest_weekly(c: Container) -> list[Publication]:
     matches = await c.match_repo.get_recent_finished(hours=168)
 
     pub = await c.ai_editor.write_weekly_digest(items, matches)
+    image_path = await c.image_generator.generate_for_publication(pub)
+    if image_path:
+        pub.image_path = image_path
     await c.pub_repo.save(pub)
     return [pub]
 
@@ -217,6 +228,9 @@ async def pipeline_digest_monthly(c: Container) -> list[Publication]:
     matches = await c.match_repo.get_recent_finished(hours=720)
 
     pub = await c.ai_editor.write_monthly_digest(items, matches)
+    image_path = await c.image_generator.generate_for_publication(pub)
+    if image_path:
+        pub.image_path = image_path
     await c.pub_repo.save(pub)
     return [pub]
 
@@ -232,7 +246,7 @@ async def pipeline_facts(c: Container) -> list[Publication]:
     else:
         pub = await c.facts_generator.generate_interesting_fact()
 
-    image_path = c.image_generator.generate_fact_card(pub.text[:300])
+    image_path = await c.image_generator.generate_for_publication(pub)
     if image_path:
         pub.image_path = image_path
 
