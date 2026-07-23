@@ -39,8 +39,6 @@ class Settings(BaseSettings):
     mistral_rate_limit_rpm: int = Field(default=30, description="Max requests per minute")
     mistral_cache_ttl_seconds: int = Field(default=3600, description="LLM response cache TTL")
 
-    # Unsplash
-    unsplash_access_key: str = Field(default="", description="Unsplash API access key for image search")
     # ── Database ──────────────────────────────────────────────────────────────
     database_path: str = Field(default="data/football_bot.db", description="SQLite DB file path")
 
@@ -51,7 +49,7 @@ class Settings(BaseSettings):
 
     # ── Publisher ─────────────────────────────────────────────────────────────
     max_publications_per_run: int = Field(
-        default=1,
+        default=1,  # <-- ИЗМЕНЕНО: теперь только 1 пост за запуск
         description="Max posts to publish in a single GitHub Actions run",
     )
     min_reliability_score: float = Field(
@@ -59,7 +57,7 @@ class Settings(BaseSettings):
         description="Minimum fact-check score (0–1) required to publish",
     )
     publication_delay_seconds: float = Field(
-        default=3.0,
+        default=300.0,  # <-- ИЗМЕНЕНО: 5 минут между постами (на случай, если будет >1)
         description="Delay between Telegram messages to respect rate limits",
     )
 
@@ -104,6 +102,12 @@ class Settings(BaseSettings):
     # ── Image generation ──────────────────────────────────────────────────────
     card_width: int = Field(default=1200, description="Generated image card width in pixels")
     card_height: int = Field(default=675, description="Generated image card height in pixels")
+
+    # ── Unsplash API ──────────────────────────────────────────────────────────
+    unsplash_access_key: str = Field(
+        default="",
+        description="Unsplash API access key for real photo search",
+    )
 
     @field_validator("channel_id")
     @classmethod
