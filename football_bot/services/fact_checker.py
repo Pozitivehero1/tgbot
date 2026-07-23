@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from football_bot.config.constants import SYSTEM_PROMPT_FACT_CHECKER
@@ -103,12 +104,13 @@ class FactChecker:
 
         return item
 
-   async def check_batch(self, items: list[NewsItem]) -> list[NewsItem]:
-    """Fact-check a list of news items sequentially (LLM rate-limit aware)."""
-    checked: list[NewsItem] = []
-    for i, item in enumerate(items):
-        checked.append(await self.check_item(item))
-        # Добавляем задержку между запросами
-        if i < len(items) - 1:
-            await asyncio.sleep(1.5)  # 1.5 секунды между запросами
-    return checked
+    async def check_batch(self, items: list[NewsItem]) -> list[NewsItem]:
+        """Fact-check a list of news items sequentially with a delay between requests to avoid rate limits."""
+        checked: list[NewsItem] = []
+        for i, item in enumerate(items):
+            checked.append(await self.check_item(item))
+            # Задержка между запросами, чтобы не превысить лимит RPM (30/мин)
+            # 1.5 секунды даёт ~40 запросов в минуту — комфортный запас
+            if i < len(items) - 1:
+                await asyncio.sleep(1.5)
+        return checked
