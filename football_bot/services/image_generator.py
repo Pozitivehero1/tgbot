@@ -23,20 +23,6 @@ logger = get_logger(__name__)
 
 _FALLBACK_FONT_SIZE = 36
 
-# Расширенный список ключевых слов для поиска
-KNOWN_PLAYERS = [
-    "Мохаммед Салах", "Mohamed Salah",
-    "Лионель Месси", "Lionel Messi",
-    "Криштиану Роналду", "Cristiano Ronaldo",
-    "Роберт Левандовски", "Robert Lewandowski",
-    "Килиан Мбаппе", "Kylian Mbappé",
-    "Эрлинг Холанд", "Erling Haaland",
-    "Неймар", "Neymar",
-    "Кевин Де Брюйне", "Kevin De Bruyne",
-    "Винисиус Жуниор", "Vinícius Júnior",
-    "Харри Кейн", "Harry Kane",
-]
-
 def _get_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     font_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -53,7 +39,6 @@ def _get_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     return ImageFont.load_default()
 
 def strip_html(text: str) -> str:
-    """Удаляет HTML-теги из текста."""
     return re.sub(r'<[^>]+>', '', text)
 
 class ImageGenerator:
@@ -87,67 +72,6 @@ class ImageGenerator:
             logger.warning("image_download_error", error=str(exc), url=url)
             return None
 
-    def _extract_player_name(self, text: str) -> Optional[str]:
-        for name in KNOWN_PLAYERS:
-            if name.lower() in text.lower():
-                return name
-        match = re.search(r'([А-Я][а-я]+ [А-Я][а-я]+)', text)
-        if match:
-            return match.group(1)
-        return None
-
-    async def get_photo_for_publication(self, pub: Publication, source_item: Optional[NewsItem] = None, match: Optional[Match] = None) -> Optional[str]:
-        if not self._image_search:
-            return None
-
-        queries = []  # список запросов для перебора
-
-        if pub.format in {PublicationFormat.BREAKING_NEWS, PublicationFormat.TRANSFER_NEWS}:
-            if source_item:
-                words = source_item.title.split()[:5]
-                queries.append(" ".join(words) + " football")
-            else:
-                words = pub.title.split()[:5]
-                queries.append(" ".join(words) + " football")
-
-        elif pub.format == PublicationFormat.INTERESTING_FACT:
-            player = self._extract_player_name(pub.text)
-            topic = pub.title.replace("Факт: ", "").strip()
-            # Генерируем несколько вариантов запросов
-            if player:
-                queries.append(f"{player} football action")
-                queries.append(f"{player} soccer")
-            else:
-                words = topic.split()[:4]
-                queries.append(" ".join(words) + " football")
-                # Если тема про вратаря, добавим специфичные слова
-                if "вратарь" in topic.lower():
-                    queries.append("goalkeeper football")
-                    queries.append("goalkeeper save")
-                if "гол" in topic.lower() or "забил" in topic.lower():
-                    queries.append("goal celebration football")
-            queries.append("football")  # запасной вариант
-
-        elif match:
-            queries.append(f"{match.home_team} vs {match.away_team} football")
-            queries.append(f"{match.home_team} {match.away_team} match")
-
-        else:
-            queries.append("football")
-
-        # Пробуем запросы по очереди
-        for query in queries:
-            if not query:
-                continue
-            photo_url = await self._image_search.search_photo(query)
-            if photo_url:
-                dest_path = self._output_dir / f"real_{uuid.uuid4().hex[:8]}.jpg"
-                local_path = await self._download_image(photo_url, dest_path)
-                if local_path:
-                    return local_path
-
-        return None
-
     def _draw_gradient_background(self, draw, bg_color, accent_color):
         for y in range(self._height):
             ratio = y / self._height
@@ -167,6 +91,7 @@ class ImageGenerator:
     def _draw_accent_bar(self, draw, accent_color, height=8):
         draw.rectangle([(0, 0), (self._width, height)], fill=accent_color)
 
+    # ----- Генерация карточки для новостей (используется если нет фото) -----
     def generate_news_card(self, pub: Publication) -> Optional[str]:
         try:
             colors = CARD_COLORS["breaking"]
@@ -199,6 +124,42 @@ class ImageGenerator:
             logger.error("image_generation_failed", format="news", error=str(exc))
             return None
 
+    # ----- Карточка для факта (красивая, всегда генерируется) -----
+    def generate_fact_card(self, pub: Publication) -> Optional[str]:
+        try:
+            # Используем более яркие цвета для фактов
+            colors = CARD_COLORS["fact"]
+            image = Image.new("RGB", (self._width, self._height), colors["bg"])
+            draw = ImageDraw.Draw(image, "RGBA")
+            self._draw_gradient_background(draw, colors["bg"], colors["accent"])
+            self._draw_accent_bar(draw, colors["accent"], height=12)
+
+            # Заголовок
+            header_font = _get_font(FONT_SIZES["subtitle"], bold=True)
+            draw.text((60, 50), "🤯 ИНТЕРЕСНЫЙ ФАКТ", font=header_font, fill=colors["accent"])
+
+            # Основной текст (очищаем от HTML)
+            clean_text = strip_html(pub.text)
+            # Берём первые 600 символов для отображения на картинке
+            display_text = clean_text[:600]
+            lines = textwrap.wrap(display_text, width=45)
+
+            body_font = _get_font(FONT_SIZES["body"], bold=False)
+            y = 130
+            max_lines = 12  # чтобы влезло
+            for line in lines[:max_lines]:
+                draw.text((60, y), line, font=body_font, fill=colors["text"])
+                y += FONT_SIZES["body"] + 8
+
+            # Нижняя подпись
+            draw.text((60, self._height - 60), "⚽ Football News", font=_get_font(FONT_SIZES["caption"]), fill=colors["subtext"])
+
+            return self._save_image(image, f"fact_{pub.pub_id[:8]}")
+        except Exception as exc:
+            logger.error("image_generation_failed", format="fact", error=str(exc))
+            return None
+
+    # ----- Карточка для матча -----
     def generate_match_card(self, match: Match) -> Optional[str]:
         try:
             colors = CARD_COLORS["match"]
@@ -224,6 +185,7 @@ class ImageGenerator:
             logger.error("image_generation_failed", format="match", error=str(exc))
             return None
 
+    # ----- Карточка для таблицы -----
     def generate_standings_card(self, league_name: str, top_rows: list[tuple[int, str, int]]) -> Optional[str]:
         try:
             colors = CARD_COLORS["standings"]
@@ -249,47 +211,39 @@ class ImageGenerator:
             logger.error("image_generation_failed", format="standings", error=str(exc))
             return None
 
-    def generate_fact_card(self, fact_text: str) -> Optional[str]:
-        try:
-            colors = CARD_COLORS["fact"]
-            image = Image.new("RGB", (self._width, self._height), colors["bg"])
-            draw = ImageDraw.Draw(image, "RGBA")
-            self._draw_gradient_background(draw, colors["bg"], colors["accent"])
-            self._draw_accent_bar(draw, colors["accent"])
-
-            header_font = _get_font(FONT_SIZES["subtitle"], bold=True)
-            body_font = _get_font(FONT_SIZES["body"])
-
-            draw.text((60, 50), "🤯 ФАКТ", font=header_font, fill=colors["accent"])
-
-            clean_text = strip_html(fact_text)
-            # Отображаем до 600 символов на картинке (больше, чем ранее)
-            display_text = clean_text[:600]
-            lines = textwrap.wrap(display_text, width=45)
-            y = 130
-            # Увеличим количество строк до 10
-            for line in lines[:10]:
-                draw.text((60, y), line, font=body_font, fill=colors["text"])
-                y += FONT_SIZES["body"] + 8
-
-            return self._save_image(image, f"fact_{uuid.uuid4().hex[:8]}")
-        except Exception as exc:
-            logger.error("image_generation_failed", format="fact", error=str(exc))
-            return None
-
+    # ----- Диспетчер -----
     async def generate_for_publication(self, pub: Publication, source_item: Optional[NewsItem] = None, match: Optional[Match] = None) -> Optional[str]:
-        real_photo = await self.get_photo_for_publication(pub, source_item, match)
-        if real_photo:
-            return real_photo
+        # Для фактов сразу генерируем карточку (без поиска фото)
+        if pub.format == PublicationFormat.INTERESTING_FACT:
+            return self.generate_fact_card(pub)
 
-        # Если фото не найдено, генерируем карточку
-        fmt = pub.format
-        if fmt in {PublicationFormat.BREAKING_NEWS, PublicationFormat.TRANSFER_NEWS}:
+        # Для новостей и трансферов пытаемся найти фото, если есть сервис
+        if pub.format in {PublicationFormat.BREAKING_NEWS, PublicationFormat.TRANSFER_NEWS}:
+            if self._image_search:
+                # Формируем запрос (как раньше)
+                query = None
+                if source_item:
+                    words = source_item.title.split()[:5]
+                    query = " ".join(words) + " football"
+                else:
+                    words = pub.title.split()[:5]
+                    query = " ".join(words) + " football"
+                if query:
+                    photo_url = await self._image_search.search_photo(query)
+                    if photo_url:
+                        dest_path = self._output_dir / f"real_{uuid.uuid4().hex[:8]}.jpg"
+                        local_path = await self._download_image(photo_url, dest_path)
+                        if local_path:
+                            return local_path
+            # Если фото не найдено или нет сервиса – генерируем карточку
             return self.generate_news_card(pub)
-        if fmt in {PublicationFormat.MATCH_PREVIEW, PublicationFormat.MATCH_REPORT, PublicationFormat.LIVE_UPDATE} and match:
+
+        # Для матчей – карточка матча
+        if match:
             return self.generate_match_card(match)
-        if fmt == PublicationFormat.INTERESTING_FACT:
-            return self.generate_fact_card(pub.text)  # теперь передаём полный текст
+
+        # Для всего остального – карточка факта (как универсальная)
         if pub.text:
-            return self.generate_fact_card(pub.text)
+            return self.generate_fact_card(pub)
+
         return None
