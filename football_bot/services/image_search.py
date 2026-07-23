@@ -74,13 +74,10 @@ class ImageSearchService:
             return None
 
     async def search_club_emblem(self, club_name: str) -> Optional[str]:
-        """Search for club emblem/logo."""
-        return await self.search_photo(f"{club_name} football club logo badge", orientation="landscape")
+        return await self.search_photo(f"{club_name} football club logo", orientation="landscape")
 
     async def search_player_photo(self, player_name: str) -> Optional[str]:
-        """Search for player photo."""
         return await self.search_photo(f"{player_name} football player portrait", orientation="portrait")
 
     async def search_match_photo(self, home_team: str, away_team: str) -> Optional[str]:
-        """Search for match action photo."""
-        return await self.search_photo(f"{home_team} vs {away_team} football match action", orientation="landscape")
+        return await self.search_photo(f"{home_team} vs {away_team} football match", orientation="landscape")
