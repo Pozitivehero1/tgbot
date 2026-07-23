@@ -78,15 +78,8 @@ class ImageGenerator:
     ) -> None:
         draw.rectangle([(0, 0), (self._width, height)], fill=accent_color)
 
-    def _draw_watermark(self, draw: ImageDraw.ImageDraw, text_color: tuple) -> None:
-        font = _get_font(20)
-        draw.text(
-            (self._width - 20, self._height - 30),
-            "⚽ Football AI",
-            font=font,
-            fill=(*text_color[:3], 120),
-            anchor="rm",
-        )
+    # Водяной знак полностью убран — метод не используется
+    # def _draw_watermark(...): pass
 
     def generate_breaking_news_card(self, item: NewsItem) -> Optional[str]:
         try:
@@ -116,7 +109,7 @@ class ImageGenerator:
                     y += FONT_SIZES["body"] + 4
 
             draw.text((60, self._height - 60), item.source_name, font=source_font, fill=colors["subtext"])
-            self._draw_watermark(draw, colors["subtext"])
+            # Водяной знак удалён
             return self._save_image(image, f"breaking_{item.item_id}")
         except Exception as exc:
             logger.error("image_generation_failed", format="breaking", error=str(exc))
@@ -142,14 +135,13 @@ class ImageGenerator:
 
             status_text = match.status.value.replace("_", " ").upper()
             draw.text((self._width // 2, self._height - 60), status_text, font=caption_font, fill=colors["subtext"], anchor="mm")
-            self._draw_watermark(draw, colors["subtext"])
+            # Водяной знак удалён
             return self._save_image(image, f"match_{match.match_id}")
         except Exception as exc:
             logger.error("image_generation_failed", format="match", error=str(exc))
             return None
 
     def generate_standings_card(self, league_name: str, top_rows: list[tuple[int, str, int]]) -> Optional[str]:
-        """top_rows: list of (position, team_name, points)."""
         try:
             colors = CARD_COLORS["standings"]
             image = Image.new("RGB", (self._width, self._height), colors["bg"])
@@ -169,7 +161,7 @@ class ImageGenerator:
                 draw.text((self._width - 80, y), f"{pts} pts", font=row_font, fill=colors["subtext"])
                 y += FONT_SIZES["body"] + 12
 
-            self._draw_watermark(draw, colors["subtext"])
+            # Водяной знак удалён
             return self._save_image(image, f"standings_{league_name[:8].lower()}")
         except Exception as exc:
             logger.error("image_generation_failed", format="standings", error=str(exc))
@@ -193,19 +185,24 @@ class ImageGenerator:
                 draw.text((60, y), line, font=body_font, fill=colors["text"])
                 y += FONT_SIZES["body"] + 8
 
-            self._draw_watermark(draw, colors["subtext"])
+            # Водяной знак удалён
             return self._save_image(image, f"fact_{uuid.uuid4().hex[:8]}")
         except Exception as exc:
             logger.error("image_generation_failed", format="fact", error=str(exc))
             return None
 
     def generate_for_publication(self, pub: Publication, source_item: Optional[NewsItem] = None, match: Optional[Match] = None) -> Optional[str]:
-        """Dispatch to the right card generator based on publication format."""
         fmt = pub.format
         if fmt == PublicationFormat.BREAKING_NEWS and source_item:
+            return self.generate_breaking_news_card(source_item)
+        if fmt == PublicationFormat.TRANSFER_NEWS and source_item:
+            # Для трансферов используем ту же карточку, что и для breaking
             return self.generate_breaking_news_card(source_item)
         if fmt in {PublicationFormat.MATCH_PREVIEW, PublicationFormat.MATCH_REPORT, PublicationFormat.LIVE_UPDATE} and match:
             return self.generate_match_card(match)
         if fmt == PublicationFormat.INTERESTING_FACT:
+            return self.generate_fact_card(pub.text[:300])
+        # Если ничего не подошло, можно сгенерировать карточку на основе текста публикации
+        if pub.text:
             return self.generate_fact_card(pub.text[:300])
         return None
