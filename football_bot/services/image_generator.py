@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 
 _FALLBACK_FONT_SIZE = 36
 
-# Список известных футболистов для извлечения из текста
+# Расширенный список ключевых слов для поиска
 KNOWN_PLAYERS = [
     "Мохаммед Салах", "Mohamed Salah",
     "Лионель Месси", "Lionel Messi",
@@ -100,43 +100,53 @@ class ImageGenerator:
         if not self._image_search:
             return None
 
-        query = None
+        queries = []  # список запросов для перебора
 
         if pub.format in {PublicationFormat.BREAKING_NEWS, PublicationFormat.TRANSFER_NEWS}:
             if source_item:
                 words = source_item.title.split()[:5]
-                query = " ".join(words) + " football"
+                queries.append(" ".join(words) + " football")
             else:
                 words = pub.title.split()[:5]
-                query = " ".join(words) + " football"
+                queries.append(" ".join(words) + " football")
 
         elif pub.format == PublicationFormat.INTERESTING_FACT:
             player = self._extract_player_name(pub.text)
             topic = pub.title.replace("Факт: ", "").strip()
+            # Генерируем несколько вариантов запросов
             if player:
-                query = f"{player} football action"
-            elif topic:
-                words = topic.split()[:4]
-                query = " ".join(words) + " football"
+                queries.append(f"{player} football action")
+                queries.append(f"{player} soccer")
             else:
-                query = "football"
+                words = topic.split()[:4]
+                queries.append(" ".join(words) + " football")
+                # Если тема про вратаря, добавим специфичные слова
+                if "вратарь" in topic.lower():
+                    queries.append("goalkeeper football")
+                    queries.append("goalkeeper save")
+                if "гол" in topic.lower() or "забил" in topic.lower():
+                    queries.append("goal celebration football")
+            queries.append("football")  # запасной вариант
 
         elif match:
-            query = f"{match.home_team} vs {match.away_team} football"
+            queries.append(f"{match.home_team} vs {match.away_team} football")
+            queries.append(f"{match.home_team} {match.away_team} match")
 
         else:
-            query = "football"
+            queries.append("football")
 
-        if not query:
-            return None
+        # Пробуем запросы по очереди
+        for query in queries:
+            if not query:
+                continue
+            photo_url = await self._image_search.search_photo(query)
+            if photo_url:
+                dest_path = self._output_dir / f"real_{uuid.uuid4().hex[:8]}.jpg"
+                local_path = await self._download_image(photo_url, dest_path)
+                if local_path:
+                    return local_path
 
-        photo_url = await self._image_search.search_photo(query)
-        if not photo_url:
-            return None
-
-        dest_path = self._output_dir / f"real_{uuid.uuid4().hex[:8]}.jpg"
-        local_path = await self._download_image(photo_url, dest_path)
-        return local_path
+        return None
 
     def _draw_gradient_background(self, draw, bg_color, accent_color):
         for y in range(self._height):
@@ -167,7 +177,6 @@ class ImageGenerator:
 
             draw.text((60, 50), "📰 НОВОСТЬ", font=_get_font(FONT_SIZES["subtitle"], bold=True), fill=colors["accent"])
 
-            # Удаляем HTML-теги из заголовка и текста для картинки
             title_clean = strip_html(pub.title)
             wrapped_title = textwrap.wrap(title_clean, width=38)
             y = 130
@@ -176,11 +185,11 @@ class ImageGenerator:
                 y += FONT_SIZES["title"] + 8
 
             if pub.text:
-                body_text_clean = strip_html(pub.text[:200])
+                body_text_clean = strip_html(pub.text[:250])
                 body_font = _get_font(FONT_SIZES["body"])
                 body_lines = textwrap.wrap(body_text_clean, width=55)
                 y += 20
-                for line in body_lines[:3]:
+                for line in body_lines[:4]:
                     draw.text((60, y), line, font=body_font, fill=colors["subtext"])
                     y += FONT_SIZES["body"] + 4
 
@@ -253,11 +262,13 @@ class ImageGenerator:
 
             draw.text((60, 50), "🤯 ФАКТ", font=header_font, fill=colors["accent"])
 
-            # Удаляем HTML-теги из текста факта
             clean_text = strip_html(fact_text)
-            lines = textwrap.wrap(clean_text[:400], width=45)
+            # Отображаем до 600 символов на картинке (больше, чем ранее)
+            display_text = clean_text[:600]
+            lines = textwrap.wrap(display_text, width=45)
             y = 130
-            for line in lines[:8]:
+            # Увеличим количество строк до 10
+            for line in lines[:10]:
                 draw.text((60, y), line, font=body_font, fill=colors["text"])
                 y += FONT_SIZES["body"] + 8
 
@@ -271,13 +282,14 @@ class ImageGenerator:
         if real_photo:
             return real_photo
 
+        # Если фото не найдено, генерируем карточку
         fmt = pub.format
         if fmt in {PublicationFormat.BREAKING_NEWS, PublicationFormat.TRANSFER_NEWS}:
             return self.generate_news_card(pub)
         if fmt in {PublicationFormat.MATCH_PREVIEW, PublicationFormat.MATCH_REPORT, PublicationFormat.LIVE_UPDATE} and match:
             return self.generate_match_card(match)
         if fmt == PublicationFormat.INTERESTING_FACT:
-            return self.generate_fact_card(pub.text[:300])
+            return self.generate_fact_card(pub.text)  # теперь передаём полный текст
         if pub.text:
-            return self.generate_fact_card(pub.text[:300])
+            return self.generate_fact_card(pub.text)
         return None
