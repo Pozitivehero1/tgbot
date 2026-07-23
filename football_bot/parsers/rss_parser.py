@@ -16,6 +16,21 @@ from football_bot.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# --- Ключевые слова для фильтрации футбольных новостей ---
+_FOOTBALL_KEYWORDS = {
+    "football", "soccer", "match", "goal", "player", "team", "club", "league",
+    "championship", "world cup", "euro", "premier league", "la liga",
+    "bundesliga", "serie a", "ligue 1", "uefa", "transfer", "manager",
+    "coach", "stadium", "fan", "fifa", "referee", "penalty", "score",
+    "victory", "defeat", "draw", "tournament", "qualification", "final",
+    "semi-final", "quarter-final", "champion", "title", "season",
+    # русские
+    "футбол", "матч", "гол", "игрок", "команда", "клуб", "лига",
+    "чемпионат", "чемпион", "кубок", "евро", "трансфер", "тренер",
+    "стадион", "болельщик", "судья", "пенальти", "счет", "победа",
+    "поражение", "ничья", "турнир", "квалификация", "финал",
+}
+
 
 class RSSParser(BaseParser):
     """Parses RSS/Atom feeds into NewsItem objects."""
@@ -57,6 +72,14 @@ class RSSParser(BaseParser):
             return NewsCategory.STATISTICS
         return NewsCategory.GENERAL
 
+    def _is_football_related(self, text: str) -> bool:
+        """Проверяет, содержит ли текст хотя бы одно футбольное ключевое слово."""
+        text_lower = text.lower()
+        for word in _FOOTBALL_KEYWORDS:
+            if word in text_lower:
+                return True
+        return False
+
     async def fetch(self, url: str) -> list[NewsItem]:
         """Fetch and parse a single RSS feed URL."""
 
@@ -73,7 +96,7 @@ class RSSParser(BaseParser):
             feed = feedparser.parse(raw)
         except Exception as exc:
             logger.warning("rss_parse_error", url=url, error=str(exc))
-            return []  # <-- ИСПРАВЛЕНО: только возврат, без мёртвого кода
+            return []
 
         items: list[NewsItem] = []
         for entry in feed.entries:
@@ -84,13 +107,17 @@ class RSSParser(BaseParser):
                 if not title or not article_url:
                     continue
 
+                # Фильтр: если новость не про футбол – пропускаем
+                combined_text = title + " " + summary
+                if not self._is_football_related(combined_text):
+                    continue
+
                 published_at = self._parse_date(
                     entry.get("published") or entry.get("updated")
                 )
                 item_id = make_item_id(article_url, title)
                 category = self._infer_category(title, summary)
 
-                # Extract tags if available
                 tags: list[str] = [
                     tag.get("term", "") for tag in entry.get("tags", []) if tag.get("term")
                 ]
