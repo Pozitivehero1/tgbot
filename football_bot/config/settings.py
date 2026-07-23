@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     # ── Publisher ─────────────────────────────────────────────────────────────
     max_publications_per_run: int = Field(
-        default=5,
+        default=1,
         description="Max posts to publish in a single GitHub Actions run",
     )
     min_reliability_score: float = Field(
