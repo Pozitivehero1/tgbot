@@ -103,9 +103,12 @@ class FactChecker:
 
         return item
 
-    async def check_batch(self, items: list[NewsItem]) -> list[NewsItem]:
-        """Fact-check a list of news items sequentially (LLM rate-limit aware)."""
-        checked: list[NewsItem] = []
-        for item in items:
-            checked.append(await self.check_item(item))
-        return checked
+   async def check_batch(self, items: list[NewsItem]) -> list[NewsItem]:
+    """Fact-check a list of news items sequentially (LLM rate-limit aware)."""
+    checked: list[NewsItem] = []
+    for i, item in enumerate(items):
+        checked.append(await self.check_item(item))
+        # Добавляем задержку между запросами
+        if i < len(items) - 1:
+            await asyncio.sleep(1.5)  # 1.5 секунды между запросами
+    return checked
