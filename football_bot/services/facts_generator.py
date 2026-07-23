@@ -40,43 +40,11 @@ class FactsGenerator:
 
     async def generate_interesting_fact(self, topic: str | None = None) -> Publication:
         selected_topic = topic or random.choice(_FACT_TOPICS)
-        prompt = f"""Напиши пост с интересным фактом о футболе для Telegram-канала.
+        target_min = 500
+        target_max = 700
 
-Тема: {selected_topic}
-
-Требования:
-- Текст должен быть ровно 400–700 символов (не больше 700, не меньше 400). Проверь длину перед отправкой.
-- Начни с эмодзи 🤯 или ⚡️ и цепляющего факта
-- Добавь контекст — почему это удивительно?
-- Факт должен быть реальным и проверяемым
-- Заверши призывом обсудить в комментариях
-- НЕ используй Markdown (звёздочки, подчёркивания)
-- НЕ добавляй хэштеги
-- НЕ используй HTML-теги (запрещены <b>, <i> и любые другие)
-- Пиши компактно, только суть, без лишней воды
-- Если факт слишком длинный, перефразируй его короче, сохранив главное"""
-
-        text = await self._llm.generate(
-            prompt=prompt,
-            system_prompt=SYSTEM_PROMPT_EDITOR,
-            temperature=0.85,
-            max_tokens=450,
-        )
-
-        # Проверяем длину и при необходимости просим сократить
-        if len(text) > 700:
-            logger.warning("fact_too_long", length=len(text), topic=selected_topic)
-            # Второй запрос на сокращение
-            shorten_prompt = f"Сократи следующий текст до 600–700 символов, сохранив главное:\n\n{text}"
-            text = await self._llm.generate(
-                prompt=shorten_prompt,
-                system_prompt=SYSTEM_PROMPT_EDITOR,
-                temperature=0.7,
-                max_tokens=400,
-            )
-            if len(text) > 700:
-                # Если всё ещё длинный, обрезаем с многоточием
-                text = text[:697] + "..."
+        # Пробуем сгенерировать текст с нужной длиной
+        text = await self._generate_fact_with_length(selected_topic, target_min, target_max)
 
         return Publication(
             pub_id=_make_pub_id("fact" + selected_topic[:20]),
@@ -87,33 +55,67 @@ class FactsGenerator:
             model_used=self._llm._model,
         )
 
-    async def generate_statistical_curiosity(self, data_context: str) -> Publication:
-        prompt = f"""Напиши пост с удивительной статистикой для футбольного Telegram-канала.
+    async def _generate_fact_with_length(self, topic: str, min_len: int, max_len: int, max_attempts: int = 3) -> str:
+        """Генерирует факт с контролем длины, при необходимости перегенерирует."""
+        for attempt in range(max_attempts):
+            prompt = f"""Напиши пост с интересным фактом о футболе для Telegram-канала.
 
-Данные для анализа:
-{data_context}
+Тема: {topic}
+
+Важно: текст должен быть ровно от {min_len} до {max_len} символов. Не больше и не меньше.
+Проверь длину перед отправкой.
 
 Требования:
-- Найди самый удивительный, нетривиальный вывод из этих данных
-- 400–600 символов
-- Начни с числа или неожиданного факта
-- Объясни, почему это поразительно
+- Начни с эмодзи 🤯 или ⚡️ и цепляющего факта
+- Добавь контекст — почему это удивительно?
+- Факт должен быть реальным и проверяемым
+- Заверши призывом обсудить в комментариях
 - НЕ используй Markdown (звёздочки, подчёркивания)
+- НЕ используй HTML-теги (<b>, <i> и т.п.)
 - НЕ добавляй хэштеги
-- НЕ используй HTML-теги
-- Пиши компактно, не более 600 символов
-- Если статистика требует больше слов, перефразируй короче"""
+- Пиши только суть, без лишней воды"""
 
-        text = await self._llm.generate(
-            prompt=prompt,
-            system_prompt=SYSTEM_PROMPT_EDITOR,
-            temperature=0.7,
-            max_tokens=350,
-        )
+            text = await self._llm.generate(
+                prompt=prompt,
+                system_prompt=SYSTEM_PROMPT_EDITOR,
+                temperature=0.85,
+                max_tokens=450,
+            )
 
-        if len(text) > 600:
-            text = text[:597] + "..."
+            # Удаляем возможные HTML-теги (на всякий случай)
+            import re
+            text = re.sub(r'<[^>]+>', '', text)
 
+            if min_len <= len(text) <= max_len:
+                logger.info("fact_generated", length=len(text), topic=topic, attempt=attempt)
+                return text
+            else:
+                logger.warning("fact_length_mismatch", length=len(text), attempt=attempt, topic=topic)
+                # Если слишком короткий, попросим дополнить
+                if len(text) < min_len:
+                    prompt = f"Дополни следующий текст до {min_len} символов, добавь контекст или детали:\n\n{text}"
+                else:
+                    prompt = f"Сократи следующий текст до {max_len} символов, сохранив главное:\n\n{text}"
+                text = await self._llm.generate(
+                    prompt=prompt,
+                    system_prompt=SYSTEM_PROMPT_EDITOR,
+                    temperature=0.7,
+                    max_tokens=400,
+                )
+                text = re.sub(r'<[^>]+>', '', text)
+                if min_len <= len(text) <= max_len:
+                    return text
+
+        # Если после всех попыток не получилось, возвращаем последнюю версию, но обрезаем до max_len
+        logger.error("fact_length_failed", topic=topic)
+        if len(text) > max_len:
+            text = text[:max_len-3] + "..."
+        return text
+
+    async def generate_statistical_curiosity(self, data_context: str) -> Publication:
+        target_min = 400
+        target_max = 600
+        text = await self._generate_fact_with_length(data_context, target_min, target_max)
         return Publication(
             pub_id=_make_pub_id("stat" + data_context[:20]),
             format=PublicationFormat.STATISTICS,
