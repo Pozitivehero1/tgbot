@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   run:
-    name: Run — ${{ github.event.inputs.run_mode }}
+    name: Run - ${{ github.event.inputs.run_mode }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -38,58 +38,44 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: "pip"
+          python-version: '3.12'
 
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            fonts-dejavu-core \
-            fonts-liberation \
-            libxml2-dev \
-            libxslt1-dev
-        shell: bash
+          sudo apt-get install -y libxml2-dev libxslt1-dev
 
       - name: Install Python dependencies
-        run: pip install --upgrade pip && pip install -r requirements.txt
-        shell: bash
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Restore database from cache
+      - name: Restore database cache
         uses: actions/cache@v4
         with:
-          path: data/
-          key: football-bot-db-${{ github.run_number }}
+          path: data/football_bot.db
+          key: football-bot-db-${{ github.run_id }}
           restore-keys: |
             football-bot-db-
 
-      - name: Run bot pipeline
+      - name: Run bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           MISTRAL_MODEL: ${{ secrets.MISTRAL_MODEL }}
           RUN_MODE: ${{ github.event.inputs.run_mode }}
-          LOG_FORMAT: json
-          LOG_LEVEL: INFO
-          DATA_DIR: data
-          DATABASE_PATH: data/football_bot.db
-          IMAGES_DIR: data/images
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
         run: python -m football_bot.main
-        shell: bash
 
-      - name: Save database to cache
-        if: always()
+      - name: Save database cache
         uses: actions/cache/save@v4
         with:
-          path: data/
-          key: football-bot-db-${{ github.run_number }}
+          path: data/football_bot.db
+          key: football-bot-db-${{ github.run_id }}
 
-      - name: Upload metrics artifact
-        if: always()
+      - name: Upload metrics
         uses: actions/upload-artifact@v4
         with:
-          name: metrics-${{ github.event.inputs.run_mode }}-${{ github.run_number }}
+          name: metrics-${{ github.event.inputs.run_mode }}-${{ github.run_id }}
           path: data/metrics.json
-          retention-days: 30
-          if-no-files-found: ignore
