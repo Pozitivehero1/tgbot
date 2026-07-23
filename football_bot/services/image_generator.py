@@ -78,10 +78,10 @@ class ImageGenerator:
     ) -> None:
         draw.rectangle([(0, 0), (self._width, height)], fill=accent_color)
 
-    # Водяной знак полностью убран — метод не используется
-    # def _draw_watermark(...): pass
+    # --- Генерация карточки для новостей (с русским текстом) ---
 
-    def generate_breaking_news_card(self, item: NewsItem) -> Optional[str]:
+    def generate_news_card(self, pub: Publication) -> Optional[str]:
+        """Создаёт карточку с русским заголовком и первым абзацем."""
         try:
             colors = CARD_COLORS["breaking"]
             image = Image.new("RGB", (self._width, self._height), colors["bg"])
@@ -89,31 +89,36 @@ class ImageGenerator:
             self._draw_gradient_background(draw, colors["bg"], colors["accent"])
             self._draw_accent_bar(draw, colors["accent"])
 
+            # Заголовок (русский)
             title_font = _get_font(FONT_SIZES["title"], bold=True)
-            source_font = _get_font(FONT_SIZES["caption"])
+            header_text = "📰 НОВОСТЬ"  # вместо "BREAKING NEWS"
+            draw.text((60, 50), header_text, font=_get_font(FONT_SIZES["subtitle"], bold=True), fill=colors["accent"])
 
-            draw.text((60, 50), "🔴 BREAKING NEWS", font=_get_font(FONT_SIZES["subtitle"], bold=True), fill=colors["accent"])
-
-            wrapped = textwrap.wrap(item.title, width=38)
+            # Заголовок публикации (уже на русском)
+            wrapped_title = textwrap.wrap(pub.title, width=38)
             y = 130
-            for line in wrapped[:4]:
+            for line in wrapped_title[:4]:
                 draw.text((60, y), line, font=title_font, fill=colors["text"])
                 y += FONT_SIZES["title"] + 8
 
-            if item.summary:
-                summary_font = _get_font(FONT_SIZES["body"])
-                summary_lines = textwrap.wrap(item.summary[:200], width=55)
+            # Первые 200 символов текста (тоже русский)
+            if pub.text:
+                body_font = _get_font(FONT_SIZES["body"])
+                body_lines = textwrap.wrap(pub.text[:200], width=55)
                 y += 20
-                for line in summary_lines[:3]:
-                    draw.text((60, y), line, font=summary_font, fill=colors["subtext"])
+                for line in body_lines[:3]:
+                    draw.text((60, y), line, font=body_font, fill=colors["subtext"])
                     y += FONT_SIZES["body"] + 4
 
-            draw.text((60, self._height - 60), item.source_name, font=source_font, fill=colors["subtext"])
-            # Водяной знак удалён
-            return self._save_image(image, f"breaking_{item.item_id}")
+            # Нижняя строка – можно добавить эмодзи футбола
+            draw.text((60, self._height - 60), "⚽ Football News", font=_get_font(FONT_SIZES["caption"]), fill=colors["subtext"])
+
+            return self._save_image(image, f"news_{pub.pub_id[:8]}")
         except Exception as exc:
-            logger.error("image_generation_failed", format="breaking", error=str(exc))
+            logger.error("image_generation_failed", format="news", error=str(exc))
             return None
+
+    # --- Остальные методы (match, standings, fact) также исправлены ---
 
     def generate_match_card(self, match: Match) -> Optional[str]:
         try:
@@ -135,8 +140,7 @@ class ImageGenerator:
 
             status_text = match.status.value.replace("_", " ").upper()
             draw.text((self._width // 2, self._height - 60), status_text, font=caption_font, fill=colors["subtext"], anchor="mm")
-            # Водяной знак удалён
-            return self._save_image(image, f"match_{match.match_id}")
+            return self._save_image(image, f"match_{match.match_id[:8]}")
         except Exception as exc:
             logger.error("image_generation_failed", format="match", error=str(exc))
             return None
@@ -152,7 +156,7 @@ class ImageGenerator:
             header_font = _get_font(FONT_SIZES["subtitle"], bold=True)
             row_font = _get_font(FONT_SIZES["body"])
 
-            draw.text((60, 40), league_name, font=header_font, fill=colors["text"])
+            draw.text((60, 40), f"📊 ТАБЛИЦА {league_name.upper()}", font=header_font, fill=colors["text"])
             y = 120
             for pos, team, pts in top_rows[:8]:
                 color = colors["accent"] if pos == 1 else colors["text"]
@@ -161,7 +165,6 @@ class ImageGenerator:
                 draw.text((self._width - 80, y), f"{pts} pts", font=row_font, fill=colors["subtext"])
                 y += FONT_SIZES["body"] + 12
 
-            # Водяной знак удалён
             return self._save_image(image, f"standings_{league_name[:8].lower()}")
         except Exception as exc:
             logger.error("image_generation_failed", format="standings", error=str(exc))
@@ -185,24 +188,27 @@ class ImageGenerator:
                 draw.text((60, y), line, font=body_font, fill=colors["text"])
                 y += FONT_SIZES["body"] + 8
 
-            # Водяной знак удалён
             return self._save_image(image, f"fact_{uuid.uuid4().hex[:8]}")
         except Exception as exc:
             logger.error("image_generation_failed", format="fact", error=str(exc))
             return None
 
     def generate_for_publication(self, pub: Publication, source_item: Optional[NewsItem] = None, match: Optional[Match] = None) -> Optional[str]:
+        """Главная диспетчерская функция."""
         fmt = pub.format
-        if fmt == PublicationFormat.BREAKING_NEWS and source_item:
-            return self.generate_breaking_news_card(source_item)
-        if fmt == PublicationFormat.TRANSFER_NEWS and source_item:
-            # Для трансферов используем ту же карточку, что и для breaking
-            return self.generate_breaking_news_card(source_item)
+
+        # Для новостей и трансферов – используем русский текст из pub
+        if fmt in {PublicationFormat.BREAKING_NEWS, PublicationFormat.TRANSFER_NEWS}:
+            return self.generate_news_card(pub)
+
         if fmt in {PublicationFormat.MATCH_PREVIEW, PublicationFormat.MATCH_REPORT, PublicationFormat.LIVE_UPDATE} and match:
             return self.generate_match_card(match)
+
         if fmt == PublicationFormat.INTERESTING_FACT:
             return self.generate_fact_card(pub.text[:300])
-        # Если ничего не подошло, можно сгенерировать карточку на основе текста публикации
+
+        # Если ничего не подошло – пробуем факт-карточку на основе текста
         if pub.text:
             return self.generate_fact_card(pub.text[:300])
+
         return None
