@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     mistral_rate_limit_rpm: int = Field(default=30, description="Max requests per minute")
     mistral_cache_ttl_seconds: int = Field(default=3600, description="LLM response cache TTL")
 
+    # Unsplash
+    unsplash_access_key: str = Field(default="", description="Unsplash API access key for image search")
     # ── Database ──────────────────────────────────────────────────────────────
     database_path: str = Field(default="data/football_bot.db", description="SQLite DB file path")
 
