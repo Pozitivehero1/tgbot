@@ -66,6 +66,7 @@ jobs:
           MISTRAL_MODEL: ${{ secrets.MISTRAL_MODEL }}
           RUN_MODE: ${{ github.event.inputs.run_mode }}
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
         run: python -m football_bot.main
 
       - name: Save database cache
