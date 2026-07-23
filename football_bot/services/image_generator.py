@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 
 _FALLBACK_FONT_SIZE = 36
 
-# Список известных футболистов для извлечения из текста (можно расширять)
+# Список известных футболистов для извлечения из текста
 KNOWN_PLAYERS = [
     "Мохаммед Салах", "Mohamed Salah",
     "Лионель Месси", "Lionel Messi",
@@ -52,6 +52,9 @@ def _get_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
                 continue
     return ImageFont.load_default()
 
+def strip_html(text: str) -> str:
+    """Удаляет HTML-теги из текста."""
+    return re.sub(r'<[^>]+>', '', text)
 
 class ImageGenerator:
     def __init__(self, image_search_service=None) -> None:
@@ -85,11 +88,9 @@ class ImageGenerator:
             return None
 
     def _extract_player_name(self, text: str) -> Optional[str]:
-        """Пытается найти имя известного футболиста в тексте."""
         for name in KNOWN_PLAYERS:
             if name.lower() in text.lower():
                 return name
-        # Если не найдено, попробуем найти имя в кавычках или после "игрока"
         match = re.search(r'([А-Я][а-я]+ [А-Я][а-я]+)', text)
         if match:
             return match.group(1)
@@ -110,11 +111,9 @@ class ImageGenerator:
                 query = " ".join(words) + " football"
 
         elif pub.format == PublicationFormat.INTERESTING_FACT:
-            # Извлекаем имя игрока, если есть
             player = self._extract_player_name(pub.text)
             topic = pub.title.replace("Факт: ", "").strip()
             if player:
-                # Запрос с именем игрока и словом football – более точный
                 query = f"{player} football action"
             elif topic:
                 words = topic.split()[:4]
@@ -168,15 +167,18 @@ class ImageGenerator:
 
             draw.text((60, 50), "📰 НОВОСТЬ", font=_get_font(FONT_SIZES["subtitle"], bold=True), fill=colors["accent"])
 
-            wrapped_title = textwrap.wrap(pub.title, width=38)
+            # Удаляем HTML-теги из заголовка и текста для картинки
+            title_clean = strip_html(pub.title)
+            wrapped_title = textwrap.wrap(title_clean, width=38)
             y = 130
             for line in wrapped_title[:4]:
                 draw.text((60, y), line, font=_get_font(FONT_SIZES["title"], bold=True), fill=colors["text"])
                 y += FONT_SIZES["title"] + 8
 
             if pub.text:
+                body_text_clean = strip_html(pub.text[:200])
                 body_font = _get_font(FONT_SIZES["body"])
-                body_lines = textwrap.wrap(pub.text[:200], width=55)
+                body_lines = textwrap.wrap(body_text_clean, width=55)
                 y += 20
                 for line in body_lines[:3]:
                     draw.text((60, y), line, font=body_font, fill=colors["subtext"])
@@ -250,7 +252,10 @@ class ImageGenerator:
             body_font = _get_font(FONT_SIZES["body"])
 
             draw.text((60, 50), "🤯 ФАКТ", font=header_font, fill=colors["accent"])
-            lines = textwrap.wrap(fact_text[:400], width=45)
+
+            # Удаляем HTML-теги из текста факта
+            clean_text = strip_html(fact_text)
+            lines = textwrap.wrap(clean_text[:400], width=45)
             y = 130
             for line in lines[:8]:
                 draw.text((60, y), line, font=body_font, fill=colors["text"])
