@@ -45,21 +45,27 @@ class FactsGenerator:
 Тема: {selected_topic}
 
 Требования:
-- 400–700 символов
+- 400–700 символов (не больше 700)
 - Начни с эмодзи 🤯 или ⚡️ и цепляющего факта
 - Добавь контекст — почему это удивительно?
 - Факт должен быть реальным и проверяемым
 - Заверши призывом обсудить в комментариях
 - НЕ используй Markdown (звёздочки, подчёркивания)
 - НЕ добавляй хэштеги
-- Используй HTML-теги <b> и <i> только при необходимости"""
+- Используй HTML-теги <b> и <i> только при необходимости
+- Пиши компактно, чтобы текст умещался в 700 символов"""
 
         text = await self._llm.generate(
             prompt=prompt,
             system_prompt=SYSTEM_PROMPT_EDITOR,
             temperature=0.85,
-            max_tokens=500,
+            max_tokens=350,  # ограничение, чтобы текст был короче
         )
+
+        # Принудительно обрезаем до 700 символов, если всё же длиннее
+        if len(text) > 700:
+            text = text[:697] + "..."
+
         return Publication(
             pub_id=_make_pub_id("fact" + selected_topic[:20]),
             format=PublicationFormat.INTERESTING_FACT,
@@ -82,14 +88,19 @@ class FactsGenerator:
 - Объясни, почему это поразительно
 - НЕ используй Markdown (звёздочки, подчёркивания)
 - НЕ добавляй хэштеги
-- Используй HTML-теги <b> и <i> только при необходимости"""
+- Используй HTML-теги <b> и <i> только при необходимости
+- Пиши компактно, не более 600 символов"""
 
         text = await self._llm.generate(
             prompt=prompt,
             system_prompt=SYSTEM_PROMPT_EDITOR,
             temperature=0.7,
-            max_tokens=400,
+            max_tokens=300,
         )
+
+        if len(text) > 600:
+            text = text[:597] + "..."
+
         return Publication(
             pub_id=_make_pub_id("stat" + data_context[:20]),
             format=PublicationFormat.STATISTICS,
