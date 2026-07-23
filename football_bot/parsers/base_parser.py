@@ -73,33 +73,33 @@ class BaseParser(ABC):
             logger.warning("parser_fetch_failed", url=url, error=str(exc))
             return None
 
-   async def _fetch_bytes(self, url: str) -> Optional[bytes]:
-    try:
-        async for attempt in AsyncRetrying(
-            stop=stop_after_attempt(HTTP_MAX_RETRIES),
-            wait=wait_exponential(multiplier=1, min=1, max=8),
-            retry=retry_if_exception_type(
-                (httpx.TransportError, httpx.TimeoutException, httpx.ConnectError)
-            ),
-            reraise=False,
-        ):
-            with attempt:
-                client = await self._get_client()
-                response = await client.get(url)
-
-                if response.status_code == 404:
-                    logger.warning("parser_404", url=url)
-                    return None
-
-                response.raise_for_status()
-                return response.content
-
-    except Exception as exc:
-        logger.warning("parser_bytes_failed", url=url, error=str(exc))
-        return None
+    async def _fetch_bytes(self, url: str) -> Optional[bytes]:
+        """Fetch raw bytes from a URL with retries."""
+        try:
+            async for attempt in AsyncRetrying(
+                stop=stop_after_attempt(HTTP_MAX_RETRIES),
+                wait=wait_exponential(multiplier=1, min=1, max=8),
+                retry=retry_if_exception_type(
+                    (httpx.TransportError, httpx.TimeoutException, httpx.ConnectError)
+                ),
+                reraise=False,
+            ):
+                with attempt:
+                    client = await self._get_client()
+                    response = await client.get(url)
+                    if response.status_code == 404:
+                        logger.warning("parser_404", url=url)
+                        return None
+                    response.raise_for_status()
+                    return response.content
+        except Exception as exc:
+            logger.warning("parser_bytes_failed", url=url, error=str(exc))
+            return None
 
     @abstractmethod
-    async def fetch(self, url: str) -> list[NewsItem]: ...
+    async def fetch(self, url: str) -> list[NewsItem]:
+        """Fetch and parse a source into NewsItem objects."""
+        ...
 
     async def fetch_all(self, urls: list[str]) -> list[NewsItem]:
         """Fetch all URLs concurrently, isolating failures per source."""
@@ -115,4 +115,6 @@ class BaseParser(ABC):
 
     @property
     @abstractmethod
-    def source_name(self) -> str: ...
+    def source_name(self) -> str:
+        """Human-readable name of the parser."""
+        ...
