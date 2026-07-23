@@ -1,8 +1,9 @@
-"""ImageGenerator — creates card images programmatically using Pillow."""
+"""ImageGenerator — creates card images for Telegram publications."""
 
 from __future__ import annotations
 
 import os
+import re
 import textwrap
 import uuid
 from pathlib import Path
@@ -22,9 +23,21 @@ logger = get_logger(__name__)
 
 _FALLBACK_FONT_SIZE = 36
 
+# Список известных футболистов для извлечения из текста (можно расширять)
+KNOWN_PLAYERS = [
+    "Мохаммед Салах", "Mohamed Salah",
+    "Лионель Месси", "Lionel Messi",
+    "Криштиану Роналду", "Cristiano Ronaldo",
+    "Роберт Левандовски", "Robert Lewandowski",
+    "Килиан Мбаппе", "Kylian Mbappé",
+    "Эрлинг Холанд", "Erling Haaland",
+    "Неймар", "Neymar",
+    "Кевин Де Брюйне", "Kevin De Bruyne",
+    "Винисиус Жуниор", "Vinícius Júnior",
+    "Харри Кейн", "Harry Kane",
+]
 
 def _get_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
-    """Return a PIL font, falling back gracefully if system fonts are unavailable."""
     font_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -41,15 +54,13 @@ def _get_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
 
 
 class ImageGenerator:
-    """Generates card images for Telegram publications using Pillow."""
-
     def __init__(self, image_search_service=None) -> None:
         settings = get_settings()
         self._output_dir = Path(settings.images_dir)
         self._output_dir.mkdir(parents=True, exist_ok=True)
         self._width = settings.card_width
         self._height = settings.card_height
-        self._image_search = image_search_service  # опционально
+        self._image_search = image_search_service
 
     def _save_image(self, image: Image.Image, name: str) -> str:
         path = self._output_dir / f"{name}.jpg"
@@ -58,7 +69,6 @@ class ImageGenerator:
         return str(path)
 
     async def _download_image(self, url: str, dest_path: Path) -> Optional[str]:
-        """Скачивает изображение по URL и сохраняет в dest_path."""
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
@@ -74,17 +84,25 @@ class ImageGenerator:
             logger.warning("image_download_error", error=str(exc), url=url)
             return None
 
+    def _extract_player_name(self, text: str) -> Optional[str]:
+        """Пытается найти имя известного футболиста в тексте."""
+        for name in KNOWN_PLAYERS:
+            if name.lower() in text.lower():
+                return name
+        # Если не найдено, попробуем найти имя в кавычках или после "игрока"
+        match = re.search(r'([А-Я][а-я]+ [А-Я][а-я]+)', text)
+        if match:
+            return match.group(1)
+        return None
+
     async def get_photo_for_publication(self, pub: Publication, source_item: Optional[NewsItem] = None, match: Optional[Match] = None) -> Optional[str]:
-        """Попытаться найти реальное фото. Если не удаётся – вернуть None."""
         if not self._image_search:
             return None
 
-        # Формируем запрос в зависимости от формата
         query = None
 
         if pub.format in {PublicationFormat.BREAKING_NEWS, PublicationFormat.TRANSFER_NEWS}:
             if source_item:
-                # Берём первые 5 слов из заголовка новости + "football"
                 words = source_item.title.split()[:5]
                 query = " ".join(words) + " football"
             else:
@@ -92,13 +110,17 @@ class ImageGenerator:
                 query = " ".join(words) + " football"
 
         elif pub.format == PublicationFormat.INTERESTING_FACT:
-            # Убираем "Факт: " из заголовка (если есть)
+            # Извлекаем имя игрока, если есть
+            player = self._extract_player_name(pub.text)
             topic = pub.title.replace("Факт: ", "").strip()
-            if topic:
-                words = topic.split()[:5]
+            if player:
+                # Запрос с именем игрока и словом football – более точный
+                query = f"{player} football action"
+            elif topic:
+                words = topic.split()[:4]
                 query = " ".join(words) + " football"
             else:
-                query = "football fact"
+                query = "football"
 
         elif match:
             query = f"{match.home_team} vs {match.away_team} football"
@@ -109,19 +131,15 @@ class ImageGenerator:
         if not query:
             return None
 
-        # Пытаемся найти фото
         photo_url = await self._image_search.search_photo(query)
         if not photo_url:
             return None
 
-        # Скачиваем
         dest_path = self._output_dir / f"real_{uuid.uuid4().hex[:8]}.jpg"
         local_path = await self._download_image(photo_url, dest_path)
         return local_path
 
-    def _draw_gradient_background(
-        self, draw: ImageDraw.ImageDraw, bg_color: tuple, accent_color: tuple
-    ) -> None:
+    def _draw_gradient_background(self, draw, bg_color, accent_color):
         for y in range(self._height):
             ratio = y / self._height
             r = int(bg_color[0] * (1 - ratio * 0.3))
@@ -137,13 +155,10 @@ class ImageGenerator:
                 min(255, accent_color[2] + alpha),
             ))
 
-    def _draw_accent_bar(
-        self, draw: ImageDraw.ImageDraw, accent_color: tuple, height: int = 8
-    ) -> None:
+    def _draw_accent_bar(self, draw, accent_color, height=8):
         draw.rectangle([(0, 0), (self._width, height)], fill=accent_color)
 
     def generate_news_card(self, pub: Publication) -> Optional[str]:
-        """Создаёт карточку с русским заголовком и первым абзацем."""
         try:
             colors = CARD_COLORS["breaking"]
             image = Image.new("RGB", (self._width, self._height), colors["bg"])
@@ -151,8 +166,7 @@ class ImageGenerator:
             self._draw_gradient_background(draw, colors["bg"], colors["accent"])
             self._draw_accent_bar(draw, colors["accent"])
 
-            header_text = "📰 НОВОСТЬ"
-            draw.text((60, 50), header_text, font=_get_font(FONT_SIZES["subtitle"], bold=True), fill=colors["accent"])
+            draw.text((60, 50), "📰 НОВОСТЬ", font=_get_font(FONT_SIZES["subtitle"], bold=True), fill=colors["accent"])
 
             wrapped_title = textwrap.wrap(pub.title, width=38)
             y = 130
@@ -169,7 +183,6 @@ class ImageGenerator:
                     y += FONT_SIZES["body"] + 4
 
             draw.text((60, self._height - 60), "⚽ Football News", font=_get_font(FONT_SIZES["caption"]), fill=colors["subtext"])
-
             return self._save_image(image, f"news_{pub.pub_id[:8]}")
         except Exception as exc:
             logger.error("image_generation_failed", format="news", error=str(exc))
@@ -249,13 +262,10 @@ class ImageGenerator:
             return None
 
     async def generate_for_publication(self, pub: Publication, source_item: Optional[NewsItem] = None, match: Optional[Match] = None) -> Optional[str]:
-        """Главная диспетчерская функция с резервной генерацией."""
-        # Сначала пробуем реальное фото
         real_photo = await self.get_photo_for_publication(pub, source_item, match)
         if real_photo:
             return real_photo
 
-        # Если не получилось – генерируем свою карточку
         fmt = pub.format
         if fmt in {PublicationFormat.BREAKING_NEWS, PublicationFormat.TRANSFER_NEWS}:
             return self.generate_news_card(pub)
